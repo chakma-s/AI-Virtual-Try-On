@@ -11,7 +11,9 @@ import '../../providers/accessory_provider.dart';
 import '../../services/face_mesh_service.dart';
 import '../../services/transform_service.dart';
 import '../../services/compositor_service.dart';
+import '../../services/image_processor_service.dart';
 import '../../core/utils/image_loader.dart';
+import '../../core/constants.dart';
 
 /// The main try-on screen where users see their photo with the accessory overlay.
 class TryOnScreen extends ConsumerStatefulWidget {
@@ -130,7 +132,13 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
   Future<void> _loadAccessoryImage(Accessory accessory) async {
     if (_loadedAccessoryId == accessory.id) return;
     try {
-      final img = await ImageLoader.loadAssetImage(accessory.imagePath);
+      ui.Image img;
+      if (accessory.customImageBytes != null) {
+        img = await ImageLoader.loadBytesImage(accessory.customImageBytes!);
+      } else {
+        img = await ImageLoader.loadAssetImage(accessory.imagePath);
+      }
+      
       if (mounted) {
         setState(() {
           _accessoryUiImage = img;
@@ -139,6 +147,59 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
       }
     } catch (e) {
       print('Failed to load accessory image: $e');
+    }
+  }
+
+  Future<void> _uploadCustomAccessory() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      setState(() => _isProcessing = true);
+      try {
+        final bytes = await picked.readAsBytes();
+        final processedBytes = await ImageProcessorService.removeWhiteBackground(bytes);
+        
+        if (processedBytes != null && mounted) {
+          final customAccessory = Accessory(
+            id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+            name: 'Custom Item',
+            category: AccessoryCategory.glasses,
+            imagePath: '', // Dynamic item has no path
+            customImageBytes: processedBytes,
+            scaleAdjust: 1.0,
+          );
+          
+          ref.read(selectedAccessoryProvider.notifier).state = customAccessory;
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Custom item uploaded and processed!'),
+              backgroundColor: TryMaarTheme.success,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to process image.'),
+              backgroundColor: TryMaarTheme.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Upload custom error: $e');
+      } finally {
+        if (mounted) {
+          setState(() => _isProcessing = false);
+        }
+      }
     }
   }
 
@@ -470,11 +531,48 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
           // Accessory switcher carousel
           SizedBox(
             height: 72,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: accessories.length,
-              itemBuilder: (context, index) {
+            child: Row(
+              children: [
+                // Custom Upload Button
+                Padding(
+                  padding: const EdgeInsets.only(left: 16.0, right: 8.0),
+                  child: GestureDetector(
+                    onTap: _uploadCustomAccessory,
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: TryMaarTheme.surfaceOverlay,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: TryMaarTheme.accent.withValues(alpha: 0.5),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add_photo_alternate_rounded, 
+                          color: TryMaarTheme.accent, 
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Divider
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: TryMaarTheme.divider,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                // Catalog List
+                Expanded(
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemCount: accessories.length,
+                    itemBuilder: (context, index) {
                 final item = accessories[index];
                 final isSelected = item.id == selected?.id;
                 return GestureDetector(
@@ -500,7 +598,9 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                     ),
                     child: Center(
                       child: Text(
-                        item.category.emoji,
+                        item.category == AccessoryCategory.glasses 
+                            ? (item.id.startsWith('custom') ? '✨' : item.category.emoji)
+                            : item.category.emoji,
                         style: const TextStyle(fontSize: 24),
                       ),
                     ),
@@ -508,6 +608,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                 );
               },
             ),
+          ),
           ),
           const SizedBox(height: 12),
           // Action buttons

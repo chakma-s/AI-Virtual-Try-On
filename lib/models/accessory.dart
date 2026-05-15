@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import '../core/constants.dart';
 
 /// Represents a fashion accessory that can be virtually tried on.
@@ -7,6 +8,7 @@ class Accessory {
   final AccessoryCategory category;
   final String imagePath;       // Path to the PNG with transparency
   final String thumbnailPath;   // Path to catalog thumbnail
+  final Uint8List? customImageBytes; // In-memory processed image
   final double offsetX;         // Horizontal offset fine-tuning
   final double offsetY;         // Vertical offset fine-tuning
   final double scaleAdjust;     // Per-item scale adjustment (1.0 = default)
@@ -17,6 +19,7 @@ class Accessory {
     required this.category,
     required this.imagePath,
     this.thumbnailPath = '',
+    this.customImageBytes,
     this.offsetX = 0.0,
     this.offsetY = 0.0,
     this.scaleAdjust = 1.0,

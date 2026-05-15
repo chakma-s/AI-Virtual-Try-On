@@ -13,4 +13,14 @@ class ImageLoader {
     
     return completer.future;
   }
+
+  static Future<ui.Image> loadBytesImage(Uint8List bytes) async {
+    final Completer<ui.Image> completer = Completer();
+    
+    ui.decodeImageFromList(bytes, (ui.Image img) {
+      return completer.complete(img);
+    });
+    
+    return completer.future;
+  }
 }
