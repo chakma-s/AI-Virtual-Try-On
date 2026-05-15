@@ -608,10 +608,12 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                 );
               },
             ),
-          ),
-          ),
-          const SizedBox(height: 12),
-          // Action buttons
+          ), // end Expanded
+        ],
+      ),
+    ), // end SizedBox
+    const SizedBox(height: 12),
+    // Action buttons
           if (_selectedImage != null || _isDemoMode)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
