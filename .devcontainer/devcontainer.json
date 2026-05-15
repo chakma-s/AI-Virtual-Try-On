@@ -1,13 +1,12 @@
 {
   "name": "TryMaar (Flutter)",
-  // We use the CirrusLabs Flutter stable image because it comes pre-installed 
-  // with Flutter, Dart, and the Android SDK, perfect for Codespaces.
-  "image": "ghcr.io/cirruslabs/flutter:stable",
-  
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "customizations": {
     "vscode": {
       "settings": {
-        "dart.flutterSdkPath": "/sdks/flutter",
+        "dart.flutterSdkPath": "/home/vscode/flutter",
         "dart.debugExternalPackageLibraries": true,
         "dart.debugSdkLibraries": false
       },
@@ -17,10 +16,7 @@
       ]
     }
   },
-
-  // Forward port 8080 so we can preview Flutter Web in the browser
   "forwardPorts": [8080],
-
-  // Automatically fetch dependencies when the Codespace is created
-  "postCreateCommand": "flutter pub get"
+  "postCreateCommand": "flutter pub get",
+  "remoteUser": "vscode"
 }
