@@ -1,0 +1,35 @@
+name: trymaar
+description: "TryMaar — AI-Powered Virtual Fashion Try-On"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_mlkit_face_detection: ^0.12.0
+  camera: ^0.11.1
+  image_picker: ^1.1.2
+  image: ^4.5.3
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+  flutter_riverpod: ^2.6.1
+  google_fonts: ^6.2.1
+  permission_handler: ^11.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/accessories/glasses/
+    - assets/accessories/earrings/
+    - assets/accessories/hats/
+    - assets/accessories/necklaces/
+    - assets/accessories/
