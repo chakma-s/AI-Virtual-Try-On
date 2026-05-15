@@ -26,6 +26,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
   File? _selectedImage;
   bool _isProcessing = false;
   bool _showLandmarks = false;
+  bool _isDemoMode = false;
   
   FaceData? _detectedFace;
   ui.Image? _accessoryUiImage;
@@ -64,6 +65,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
     if (picked != null) {
       setState(() {
         _selectedImage = File(picked.path);
+        _isDemoMode = false;
         _isProcessing = true;
         _detectedFace = null;
       });
@@ -89,6 +91,38 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
             ),
           );
         }
+      }
+    }
+  }
+
+  Future<void> _useDemoFace() async {
+    setState(() {
+      _selectedImage = null;
+      _isDemoMode = true;
+      _isProcessing = true;
+      _detectedFace = null;
+    });
+    
+    // Pass the asset path to the face detector
+    final faceData = await _faceMeshService.detect('assets/demo/demo_face.png');
+    
+    if (mounted) {
+      setState(() {
+        _detectedFace = faceData;
+        _isProcessing = false;
+      });
+
+      if (faceData == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to detect face on demo model.'),
+            backgroundColor: TryMaarTheme.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
       }
     }
   }
@@ -127,7 +161,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          if (_selectedImage != null && _detectedFace != null)
+          if ((_selectedImage != null || _isDemoMode) && _detectedFace != null)
             IconButton(
               icon: Icon(
                 _showLandmarks ? Icons.visibility : Icons.visibility_off,
@@ -146,7 +180,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
         children: [
           // ─── Preview Area ───
           Expanded(
-            child: _selectedImage == null
+            child: (_selectedImage == null && !_isDemoMode)
                 ? _buildPhotoPrompt(context)
                 : _buildTryOnPreview(context, accessory),
           ),
@@ -226,6 +260,13 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                   color: TryMaarTheme.accent,
                   onTap: () => _pickImage(ImageSource.gallery),
                 ),
+                const SizedBox(width: 20),
+                _ActionButton(
+                  icon: Icons.face_retouching_natural_rounded,
+                  label: 'Demo Model',
+                  color: TryMaarTheme.success,
+                  onTap: _useDemoFace,
+                ),
               ],
             ),
           ],
@@ -253,10 +294,9 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  _selectedImage!.path,
-                  fit: BoxFit.contain,
-                ),
+                _isDemoMode 
+                    ? Image.asset('assets/demo/demo_face.png', fit: BoxFit.contain)
+                    : Image.network(_selectedImage!.path, fit: BoxFit.contain),
                 
                 // Drawing overlay layer mapped to image dimensions
                 if (_detectedFace != null && accessory != null && _accessoryUiImage != null)
@@ -471,7 +511,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
           ),
           const SizedBox(height: 12),
           // Action buttons
-          if (_selectedImage != null)
+          if (_selectedImage != null || _isDemoMode)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -597,6 +637,30 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                   onTap: () {
                     Navigator.pop(context);
                     _pickImage(ImageSource.gallery);
+                  },
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: TryMaarTheme.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.face_retouching_natural_rounded,
+                      color: TryMaarTheme.success,
+                    ),
+                  ),
+                  title: const Text('Use Demo Model'),
+                  subtitle: Text(
+                    'Try accessories on an AI model',
+                    style: TextStyle(color: TryMaarTheme.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _useDemoFace();
                   },
                 ),
               ],
