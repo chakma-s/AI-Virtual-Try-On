@@ -5,18 +5,18 @@ class TryMaarTheme {
   TryMaarTheme._();
 
   // ─── Color Palette ───
-  static const Color primary = Color(0xFFD9480F);       // Matte burnt orange
-  static const Color primaryDark = Color(0xFFB33A0A);   // Darker orange
-  static const Color accent = Color(0xFFFF6B2B);        // Brighter orange accent
-  static const Color surface = Color(0xFF0D0D0D);       // Almost pure black
-  static const Color surfaceLight = Color(0xFF1A1A1A);  // Very dark gray card
-  static const Color surfaceOverlay = Color(0xFF242424); // Elevated card
-  static const Color background = Color(0xFF000000);    // Pure jet black
-  static const Color textPrimary = Color(0xFFF5F5F5);
-  static const Color textSecondary = Color(0xFFA3A3A3); // Neutral gray
-  static const Color divider = Color(0xFF2E2E2E);       // Dark gray divider
-  static const Color success = Color(0xFF00E676);
-  static const Color warning = Color(0xFFFFAB40);
+  static const Color primary = Color(0xFFE7620C);       // Jhum primary
+  static const Color primaryDark = Color(0xFFD9480F);   // Jhum accent-pink
+  static const Color accent = Color(0xFFF59E0B);        // Jhum accent-cyan
+  static const Color surface = Color(0xFF0A0A0A);       // Jhum bg-deep
+  static const Color surfaceLight = Color(0xFF111111);  // Jhum bg-card
+  static const Color surfaceOverlay = Color(0xFF141414); // Light overlay
+  static const Color background = Color(0xFF0A0A0A);    // Jhum bg-deep
+  static const Color textPrimary = Color(0xFFF8FAFC);   // Jhum text-main
+  static const Color textSecondary = Color(0xFFA1A1AA); // Jhum text-muted
+  static const Color divider = Color(0x14FFFFFF);       // Jhum border-glass (8% white)
+  static const Color success = Color(0xFF10B981);       // Jhum status-completed
+  static const Color warning = Color(0xFFF59E0B);       // Jhum status-pending
   static const Color error = Color(0xFFFF5252);
 
   // ─── Gradients ───
@@ -45,10 +45,10 @@ class TryMaarTheme {
   );
 
   // ─── Border Radius ───
-  static const double radiusSm = 8.0;
-  static const double radiusMd = 16.0;
-  static const double radiusLg = 24.0;
-  static const double radiusXl = 32.0;
+  static const double radiusSm = 4.0;
+  static const double radiusMd = 8.0;   // 0.5rem minimalist corner
+  static const double radiusLg = 12.0;
+  static const double radiusXl = 16.0;
 
   // ─── Spacing ───
   static const double spaceSm = 8.0;
