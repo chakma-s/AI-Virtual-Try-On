@@ -9,6 +9,7 @@ RUN git clone https://github.com/flutter/flutter.git -b stable flutter
 ENV PATH="/home/vscode/flutter/bin:${PATH}"
 
 # Pre-cache flutter dependencies and enable web
-RUN flutter config --no-analytics && \
+RUN echo 'export PATH="/home/vscode/flutter/bin:$PATH"' >> /home/vscode/.bashrc && \
+    flutter config --no-analytics && \
     flutter config --enable-web && \
     flutter precache --web
