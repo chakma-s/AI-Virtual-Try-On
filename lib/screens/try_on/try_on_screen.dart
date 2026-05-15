@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -106,7 +108,13 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
     });
     
     // Pass the asset path to the face detector
-    final faceData = await _faceMeshService.detect('assets/demo/demo_face.png');
+    // Load as base64 to avoid Flutter Web relative path routing issues in JS
+    final ByteData data = await rootBundle.load('assets/demo/demo_face.png');
+    final Uint8List bytes = data.buffer.asUint8List();
+    final String base64String = base64Encode(bytes);
+    final String dataUrl = 'data:image/png;base64,$base64String';
+    
+    final faceData = await _faceMeshService.detect(dataUrl);
     
     if (mounted) {
       setState(() {
