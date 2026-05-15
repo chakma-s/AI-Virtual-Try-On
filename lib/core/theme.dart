@@ -5,31 +5,31 @@ class TryMaarTheme {
   TryMaarTheme._();
 
   // ─── Color Palette ───
-  static const Color primary = Color(0xFFE040FB);       // Vivid magenta
-  static const Color primaryDark = Color(0xFFAB00D9);   // Deep purple
-  static const Color accent = Color(0xFF00E5FF);        // Cyan accent
-  static const Color surface = Color(0xFF1A1A2E);       // Deep navy
-  static const Color surfaceLight = Color(0xFF232342);  // Card background
-  static const Color surfaceOverlay = Color(0xFF2A2A4A); // Elevated card
-  static const Color background = Color(0xFF0F0F1A);    // True dark
+  static const Color primary = Color(0xFFD9480F);       // Matte burnt orange
+  static const Color primaryDark = Color(0xFFB33A0A);   // Darker orange
+  static const Color accent = Color(0xFFFF6B2B);        // Brighter orange accent
+  static const Color surface = Color(0xFF0D0D0D);       // Almost pure black
+  static const Color surfaceLight = Color(0xFF1A1A1A);  // Very dark gray card
+  static const Color surfaceOverlay = Color(0xFF242424); // Elevated card
+  static const Color background = Color(0xFF000000);    // Pure jet black
   static const Color textPrimary = Color(0xFFF5F5F5);
-  static const Color textSecondary = Color(0xFFB0B0C8);
-  static const Color divider = Color(0xFF3A3A5C);
+  static const Color textSecondary = Color(0xFFA3A3A3); // Neutral gray
+  static const Color divider = Color(0xFF2E2E2E);       // Dark gray divider
   static const Color success = Color(0xFF00E676);
   static const Color warning = Color(0xFFFFAB40);
   static const Color error = Color(0xFFFF5252);
 
   // ─── Gradients ───
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [primary, Color(0xFF7C4DFF)],
+    colors: [accent, primary],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient cardGradient = LinearGradient(
     colors: [
-      Color(0xFF232342),
-      Color(0xFF1A1A2E),
+      Color(0xFF1A1A1A),
+      Color(0xFF000000),
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -38,7 +38,7 @@ class TryMaarTheme {
   static const LinearGradient glassGradient = LinearGradient(
     colors: [
       Color(0x33FFFFFF),
-      Color(0x0DFFFFFF),
+      Color(0x05FFFFFF),
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
