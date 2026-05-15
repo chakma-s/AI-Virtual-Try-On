@@ -22,8 +22,5 @@
   "forwardPorts": [8080],
 
   // Automatically fetch dependencies when the Codespace is created
-  "postCreateCommand": "flutter pub get",
-  
-  // Connect as the default user from the image
-  "remoteUser": "cirrus"
+  "postCreateCommand": "flutter pub get"
 }
