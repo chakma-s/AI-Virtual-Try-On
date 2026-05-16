@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/constants.dart';
 import '../../core/theme.dart';
-import '../../providers/accessory_provider.dart';
-import '../catalog/catalog_screen.dart';
+import '../try_on/try_on_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
@@ -25,14 +22,6 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 40),
                 // ─── Hero Section ───
                 _buildHeroCard(context),
-                const SizedBox(height: 36),
-                // ─── Category Grid ───
-                Text(
-                  'Choose Category',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                _buildCategoryGrid(context, ref),
                 const SizedBox(height: 36),
                 // ─── How It Works ───
                 _buildHowItWorks(context),
@@ -67,9 +56,7 @@ class HomeScreen extends ConsumerWidget {
         ),
         const Spacer(),
         IconButton(
-          onPressed: () {
-            // TODO: Settings / About
-          },
+          onPressed: () {},
           icon: Icon(
             Icons.more_vert_rounded,
             color: TryMaarTheme.textSecondary,
@@ -130,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Virtually try on glasses, earrings, hats & more using just a selfie. Powered by on-device AI.',
+            'Virtually try on your own items using just a selfie. Powered by on-device AI.',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: TryMaarTheme.textSecondary,
                   height: 1.5,
@@ -142,7 +129,7 @@ class HomeScreen extends ConsumerWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const CatalogScreen(),
+                  builder: (_) => const TryOnScreen(),
                 ),
               );
             },
@@ -161,37 +148,11 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildCategoryGrid(BuildContext context, WidgetRef ref) {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      mainAxisSpacing: 14,
-      crossAxisSpacing: 14,
-      childAspectRatio: 1.4,
-      children: AccessoryCategory.values.map((category) {
-        return _CategoryCard(
-          category: category,
-          onTap: () {
-            ref.read(selectedCategoryProvider.notifier).state = category;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const CatalogScreen(),
-              ),
-            );
-          },
-        );
-      }).toList(),
-    );
-  }
-
   Widget _buildHowItWorks(BuildContext context) {
     final steps = [
       ('📸', 'Take a Selfie', 'Use your camera or upload a photo'),
-      ('👓', 'Pick an Accessory', 'Browse our curated collection'),
-      ('✨', 'See the Magic', 'AI places it perfectly on you'),
-      ('💾', 'Save & Share', 'Download or share to socials'),
+      ('👓', 'Upload an Item', 'Take a photo of the item you want to try on'),
+      ('✨', 'See the Magic', 'AI perfectly places it on you'),
     ];
 
     return Column(
@@ -257,76 +218,6 @@ class HomeScreen extends ConsumerWidget {
           );
         }),
       ],
-    );
-  }
-}
-
-class _CategoryCard extends StatelessWidget {
-  final AccessoryCategory category;
-  final VoidCallback onTap;
-
-  const _CategoryCard({required this.category, required this.onTap});
-
-  static const _categoryIcons = {
-    AccessoryCategory.glasses: Icons.visibility_rounded,
-    AccessoryCategory.earrings: Icons.diamond_rounded,
-    AccessoryCategory.hats: Icons.school_rounded,
-    AccessoryCategory.necklaces: Icons.all_inclusive_rounded,
-  };
-
-  static const _categoryColors = {
-    AccessoryCategory.glasses: Color(0xFF7C4DFF),
-    AccessoryCategory.earrings: Color(0xFFE040FB),
-    AccessoryCategory.hats: Color(0xFF00E5FF),
-    AccessoryCategory.necklaces: Color(0xFFFFAB40),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _categoryColors[category] ?? TryMaarTheme.primary;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(TryMaarTheme.radiusMd),
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: TryMaarTheme.surfaceLight,
-            borderRadius: BorderRadius.circular(TryMaarTheme.radiusMd),
-            border: Border.all(
-              color: color.withValues(alpha: 0.2),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  _categoryIcons[category],
-                  color: color,
-                  size: 22,
-                ),
-              ),
-              Text(
-                category.label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

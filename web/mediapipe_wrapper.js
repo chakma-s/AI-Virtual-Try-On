@@ -3,21 +3,27 @@ let faceLandmarker;
 async function initFaceLandmarker() {
   if (faceLandmarker) return;
   
-  // The tasks-vision library exposes a global object if loaded via script tag
-  const vision = await window.FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-  );
-  
-  faceLandmarker = await window.FaceLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-      delegate: "GPU"
-    },
-    outputFaceBlendshapes: false,
-    runningMode: "IMAGE",
-    numFaces: 1
-  });
-  console.log("MediaPipe Face Landmarker initialized!");
+  try {
+    const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs");
+    
+    const wasmFileset = await vision.FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+    );
+    
+    faceLandmarker = await vision.FaceLandmarker.createFromOptions(wasmFileset, {
+      baseOptions: {
+        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+        delegate: "GPU"
+      },
+      outputFaceBlendshapes: false,
+      runningMode: "IMAGE",
+      numFaces: 1
+    });
+    console.log("MediaPipe Face Landmarker initialized!");
+  } catch (e) {
+    console.error("Failed to load MediaPipe module:", e);
+    throw e;
+  }
 }
 
 async function detectFaces(imageUrl) {

@@ -1,7 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,15 +8,15 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme.dart';
 import '../../models/accessory.dart';
 import '../../models/landmark.dart';
+import '../../models/draggable_item.dart';
 import '../../providers/accessory_provider.dart';
 import '../../services/face_mesh_service.dart';
-import '../../services/transform_service.dart';
-import '../../services/compositor_service.dart';
 import '../../services/image_processor_service.dart';
+import '../../services/transform_service.dart';
 import '../../core/utils/image_loader.dart';
 import '../../core/constants.dart';
+import 'item_isolator_screen.dart';
 
-/// The main try-on screen where users see their photo with the accessory overlay.
 class TryOnScreen extends ConsumerStatefulWidget {
   const TryOnScreen({super.key});
 
@@ -29,16 +28,19 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
     with SingleTickerProviderStateMixin {
   File? _selectedImage;
   bool _isProcessing = false;
-  bool _showLandmarks = false;
-  bool _isDemoMode = false;
   
   FaceData? _detectedFace;
-  ui.Image? _accessoryUiImage;
-  String? _loadedAccessoryId;
+  
+  // Multi-item support (up to 3)
+  final List<DraggableItem> _activeItems = [];
+  bool _isDraggingItem = false;
+  bool _isOverDustbin = false;
 
   late AnimationController _pulseController;
   final FaceMeshService _faceMeshService = FaceMeshService();
-  final TransformService _transformService = const TransformService();
+
+  // Keys to locate the dustbin for drag collisions
+  final GlobalKey _dustbinKey = GlobalKey();
 
   @override
   void initState() {
@@ -48,7 +50,6 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
     
-    // Initialize the FaceMeshService (loads JS scripts on web)
     _faceMeshService.initialize();
   }
 
@@ -69,12 +70,11 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
     if (picked != null) {
       setState(() {
         _selectedImage = File(picked.path);
-        _isDemoMode = false;
         _isProcessing = true;
         _detectedFace = null;
+        _activeItems.clear(); // Clear items on new photo
       });
       
-      // Pass the picked.path (blob URL on web, local path on mobile) to face detector
       final faceData = await _faceMeshService.detect(picked.path);
       
       if (mounted) {
@@ -86,7 +86,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
         if (faceData == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('No face detected. Please try another photo.'),
+              content: const Text('Face not clear. AI placement won\'t work, but you can still drag items.'),
               backgroundColor: TryMaarTheme.error,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
@@ -96,166 +96,219 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
           );
         }
       }
-    }
-  }
-
-  Future<void> _useDemoFace() async {
-    setState(() {
-      _selectedImage = null;
-      _isDemoMode = true;
-      _isProcessing = true;
-      _detectedFace = null;
-    });
-    
-    // Pass the asset path to the face detector
-    // Load as base64 to avoid Flutter Web relative path routing issues in JS
-    final ByteData data = await rootBundle.load('assets/demo/demo_face.png');
-    final Uint8List bytes = data.buffer.asUint8List();
-    final String base64String = base64Encode(bytes);
-    final String dataUrl = 'data:image/png;base64,$base64String';
-    
-    final faceData = await _faceMeshService.detect(dataUrl);
-    
-    if (mounted) {
-      setState(() {
-        _detectedFace = faceData;
-        _isProcessing = false;
-      });
-
-      if (faceData == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to detect face on demo model.'),
-            backgroundColor: TryMaarTheme.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadAccessoryImage(Accessory accessory) async {
-    if (_loadedAccessoryId == accessory.id) return;
-    try {
-      ui.Image img;
-      if (accessory.customImageBytes != null) {
-        img = await ImageLoader.loadBytesImage(accessory.customImageBytes!);
-      } else {
-        img = await ImageLoader.loadAssetImage(accessory.imagePath);
-      }
-      
-      if (mounted) {
-        setState(() {
-          _accessoryUiImage = img;
-          _loadedAccessoryId = accessory.id;
-        });
-      }
-    } catch (e) {
-      print('Failed to load accessory image: $e');
     }
   }
 
   Future<void> _uploadCustomAccessory() async {
+    if (_activeItems.length >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Maximum of 3 items reached. Please delete one first.'),
+          backgroundColor: TryMaarTheme.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Ask what category they are uploading (for AI initial placement)
+    final category = await showDialog<AccessoryCategory>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: TryMaarTheme.surface,
+          title: const Text('Select Item Type'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: AccessoryCategory.values.map((c) {
+              return ListTile(
+                leading: Text(c.emoji, style: const TextStyle(fontSize: 24)),
+                title: Text(c.label),
+                onTap: () => Navigator.pop(context, c),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+
+    if (category == null) return; 
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: TryMaarTheme.surface,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: TryMaarTheme.primary),
+              title: const Text('Take a photo of the item'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: TryMaarTheme.accent),
+              title: const Text('Upload item from gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    final picked = await picker.pickImage(source: source);
     if (picked != null) {
-      setState(() => _isProcessing = true);
-      try {
-        final bytes = await picked.readAsBytes();
-        final processedBytes = await ImageProcessorService.removeWhiteBackground(bytes);
-        
-        if (processedBytes != null && mounted) {
+      final bytes = await picked.readAsBytes();
+      
+      Uint8List? isolatedBytes;
+      
+      if (category == AccessoryCategory.glasses) {
+        setState(() => _isProcessing = true);
+        isolatedBytes = await ImageProcessorService.automaticIsolate(bytes);
+      } else {
+        // Navigate to Isolator Screen for manual extraction
+        if (mounted) {
+          isolatedBytes = await Navigator.push<Uint8List?>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ItemIsolatorScreen(imageBytes: bytes),
+            ),
+          );
+        }
+      }
+
+      if (isolatedBytes != null && mounted) {
+        setState(() => _isProcessing = true);
+        try {
           final customAccessory = Accessory(
             id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
-            name: 'Custom Item',
-            category: AccessoryCategory.glasses,
-            imagePath: '', // Dynamic item has no path
-            customImageBytes: processedBytes,
+            name: 'My Custom ${category.label}',
+            category: category,
+            imagePath: '', 
+            customImageBytes: isolatedBytes,
             scaleAdjust: 1.0,
           );
+
+          // Load UI image
+          final ui.Image img = await ImageLoader.loadBytesImage(isolatedBytes);
           
-          ref.read(selectedAccessoryProvider.notifier).state = customAccessory;
+          Offset initialPos = Offset(
+            MediaQuery.of(context).size.width / 2 - (img.width / 4), 
+            MediaQuery.of(context).size.height / 2 - (img.height / 4)
+          );
+          double initialScale = 1.0;
           
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Custom item uploaded and processed!'),
-              backgroundColor: TryMaarTheme.success,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Failed to process image.'),
-              backgroundColor: TryMaarTheme.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        print('Upload custom error: $e');
-      } finally {
-        if (mounted) {
+          if (_detectedFace != null && category == AccessoryCategory.glasses) {
+             // Basic estimation for auto-snapping to the eyes
+             // Assuming the image roughly fills the screen width (portrait selfie)
+             final face = _detectedFace!;
+             final screenW = MediaQuery.of(context).size.width - 32; // 16 margin on each side
+             final scaleFactor = screenW / face.imageWidth;
+             
+             // Get eyes
+             final leftEye = face.landmarks[LandmarkIndices.leftEyeOuter];
+             final rightEye = face.landmarks[LandmarkIndices.rightEyeOuter];
+             
+             final eyeCenterX = (leftEye.x + rightEye.x) / 2 * scaleFactor;
+             final eyeCenterY = (leftEye.y + rightEye.y) / 2 * scaleFactor;
+             
+             final eyeDistance = (rightEye.x - leftEye.x).abs() * scaleFactor;
+             
+             // Assume glasses width should be roughly 2.0x to 2.5x the eye distance
+             final targetWidth = eyeDistance * 2.2;
+             
+             // The CustomPaint in DraggableAccessory draws at img.width / 2.
+             // We want (img.width / 2) * scale = targetWidth
+             initialScale = targetWidth / (img.width / 2);
+             
+             // We need to set the top-left position of the draggable widget.
+             // The widget draws at (img.width/2 * scale) size.
+             final drawW = (img.width / 2) * initialScale;
+             final drawH = (img.height / 2) * initialScale;
+             
+             // Vertically center the display space (BoxFit.contain roughly centers it)
+             final screenH = MediaQuery.of(context).size.height;
+             final displayH = face.imageHeight * scaleFactor;
+             final yOffset = (screenH - displayH) / 2;
+             
+             initialPos = Offset(
+               eyeCenterX - (drawW / 2) + 16, // +16 for margin
+               (eyeCenterY + yOffset) - (drawH / 2) - 60 // -60 adjust for appbar/safearea
+             );
+          }
+
+          setState(() {
+            _activeItems.add(DraggableItem(
+              accessory: customAccessory,
+              image: img,
+              position: initialPos,
+              scale: initialScale,
+              autoSnapToFace: category == AccessoryCategory.glasses,
+            ));
+            _isProcessing = false;
+          });
+        } catch (e) {
           setState(() => _isProcessing = false);
+          debugPrint('Failed to load isolated image: $e');
         }
+      } else {
+        setState(() => _isProcessing = false);
       }
     }
   }
 
+  void _onItemDragUpdate(Offset globalPosition) {
+    if (_dustbinKey.currentContext != null) {
+      final RenderBox renderBox = _dustbinKey.currentContext!.findRenderObject() as RenderBox;
+      final position = renderBox.localToGlobal(Offset.zero);
+      final size = renderBox.size;
+      final dustbinRect = Rect.fromLTWH(position.dx, position.dy, size.width, size.height);
+
+      final isOver = dustbinRect.contains(globalPosition);
+      if (_isOverDustbin != isOver) {
+        setState(() {
+          _isOverDustbin = isOver;
+        });
+      }
+    }
+  }
+
+  void _onItemDragEnd(DraggableItem item, Offset globalPosition) {
+    setState(() {
+      _isDraggingItem = false;
+      if (_isOverDustbin) {
+        _activeItems.removeWhere((element) => element.id == item.id);
+        _isOverDustbin = false;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final accessory = ref.watch(selectedAccessoryProvider);
-    final accessories = ref.watch(filteredAccessoriesProvider);
-
-    // Load UI image if accessory changed
-    if (accessory != null && _loadedAccessoryId != accessory.id) {
-      _loadAccessoryImage(accessory);
-    }
-
     return Scaffold(
       backgroundColor: TryMaarTheme.background,
       appBar: AppBar(
-        title: Text(accessory?.name ?? 'Try On'),
+        title: const Text('Try On'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          if ((_selectedImage != null || _isDemoMode) && _detectedFace != null)
-            IconButton(
-              icon: Icon(
-                _showLandmarks ? Icons.visibility : Icons.visibility_off,
-                color: _showLandmarks
-                    ? TryMaarTheme.accent
-                    : TryMaarTheme.textSecondary,
-              ),
-              tooltip: 'Toggle landmarks',
-              onPressed: () {
-                setState(() => _showLandmarks = !_showLandmarks);
-              },
-            ),
-        ],
       ),
       body: Column(
         children: [
-          // ─── Preview Area ───
           Expanded(
-            child: (_selectedImage == null && !_isDemoMode)
+            child: _selectedImage == null
                 ? _buildPhotoPrompt(context)
-                : _buildTryOnPreview(context, accessory),
+                : _buildTryOnPreview(context),
           ),
-
-          // ─── Bottom Controls ───
-          _buildBottomBar(context, accessory, accessories),
+          if (_selectedImage != null)
+            _buildBottomBar(context),
         ],
       ),
     );
@@ -305,7 +358,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Take a selfie or upload a photo\nto see the accessory on you',
+              'Take a selfie or upload a photo\nto start adding items',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: TryMaarTheme.textSecondary,
@@ -329,13 +382,6 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                   color: TryMaarTheme.accent,
                   onTap: () => _pickImage(ImageSource.gallery),
                 ),
-                const SizedBox(width: 20),
-                _ActionButton(
-                  icon: Icons.face_retouching_natural_rounded,
-                  label: 'Demo Model',
-                  color: TryMaarTheme.success,
-                  onTap: _useDemoFace,
-                ),
               ],
             ),
           ],
@@ -344,11 +390,11 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
     );
   }
 
-  Widget _buildTryOnPreview(BuildContext context, Accessory? accessory) {
+  Widget _buildTryOnPreview(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // User photo inside a FittedBox to map canvas correctly
+        // User photo
         Container(
           margin: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -363,84 +409,18 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _isDemoMode 
-                    ? Image.asset('assets/demo/demo_face.png', fit: BoxFit.contain)
-                    : Image.network(_selectedImage!.path, fit: BoxFit.contain),
+                Image.network(_selectedImage!.path, fit: BoxFit.contain),
                 
-                // Drawing overlay layer mapped to image dimensions
-                if (_detectedFace != null && accessory != null && _accessoryUiImage != null)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      // We need to scale the canvas drawing coordinates to match the BoxFit.contain sizing
-                      final imageWidth = _detectedFace!.imageWidth.toDouble();
-                      final imageHeight = _detectedFace!.imageHeight.toDouble();
-                      final widgetWidth = constraints.maxWidth;
-                      final widgetHeight = constraints.maxHeight;
-
-                      final double imageAspectRatio = imageWidth / imageHeight;
-                      final double widgetAspectRatio = widgetWidth / widgetHeight;
-                      
-                      double drawWidth, drawHeight;
-                      if (imageAspectRatio > widgetAspectRatio) {
-                        drawWidth = widgetWidth;
-                        drawHeight = widgetWidth / imageAspectRatio;
-                      } else {
-                        drawHeight = widgetHeight;
-                        drawWidth = widgetHeight * imageAspectRatio;
-                      }
-
-                      final scaleX = drawWidth / imageWidth;
-                      final scaleY = drawHeight / imageHeight;
-                      final offsetX = (widgetWidth - drawWidth) / 2;
-                      final offsetY = (widgetHeight - drawHeight) / 2;
-
-                      final accessoryRatio = _accessoryUiImage!.width / _accessoryUiImage!.height;
-                      final transform = _transformService.computeTransform(
-                        face: _detectedFace!,
-                        accessory: accessory,
-                        accessoryAspectRatio: accessoryRatio,
-                      );
-
-                      return Stack(
-                        children: [
-                          Positioned(
-                            left: offsetX,
-                            top: offsetY,
-                            width: drawWidth,
-                            height: drawHeight,
-                            child: Transform.scale(
-                              scaleX: scaleX,
-                              scaleY: scaleY,
-                              alignment: Alignment.topLeft,
-                              child: CustomPaint(
-                                painter: AccessoryOverlayPainter(
-                                  accessoryImage: _accessoryUiImage!,
-                                  transform: transform,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_showLandmarks)
-                            Positioned(
-                              left: offsetX,
-                              top: offsetY,
-                              width: drawWidth,
-                              height: drawHeight,
-                              child: Transform.scale(
-                                scaleX: scaleX,
-                                scaleY: scaleY,
-                                alignment: Alignment.topLeft,
-                                child: CustomPaint(
-                                  painter: LandmarkDebugPainter(
-                                    landmarks: _detectedFace!.landmarks.map((l) => Offset(l.x, l.y)).toList(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
+                // Draggable Items
+                ..._activeItems.map((item) {
+                  return DraggableAccessoryWidget(
+                    key: ValueKey(item.id),
+                    item: item,
+                    onDragStart: () => setState(() => _isDraggingItem = true),
+                    onDragUpdate: _onItemDragUpdate,
+                    onDragEnd: (globalPos) => _onItemDragEnd(item, globalPos),
+                  );
+                }),
               ],
             ),
           ),
@@ -460,7 +440,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Detecting face landmarks...',
+                    'Processing...',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.white,
                         ),
@@ -470,63 +450,49 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
             ),
           ),
 
-        // Accessory info badge
-        if (accessory != null && !_isProcessing)
+        // Floating Dustbin (visible when dragging)
+        if (_isDraggingItem)
           Positioned(
-            top: 28,
-            right: 28,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
+            bottom: 30,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                key: _dustbinKey,
+                width: _isOverDustbin ? 80 : 60,
+                height: _isOverDustbin ? 80 : 60,
+                decoration: BoxDecoration(
+                  color: _isOverDustbin ? TryMaarTheme.error : TryMaarTheme.surfaceOverlay,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _isOverDustbin ? Colors.white : TryMaarTheme.error.withValues(alpha: 0.5),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    if (_isOverDustbin)
+                      BoxShadow(
+                        color: TryMaarTheme.error.withValues(alpha: 0.5),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      )
+                  ],
+                ),
+                child: Icon(
+                  _isOverDustbin ? Icons.delete_forever_rounded : Icons.delete_outline_rounded,
+                  color: Colors.white,
+                  size: _isOverDustbin ? 40 : 28,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    accessory.category.emoji,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    accessory.name,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-        // Change photo button
-        if (!_isProcessing)
-          Positioned(
-            bottom: 28,
-            right: 28,
-            child: FloatingActionButton.small(
-              heroTag: 'change_photo',
-              onPressed: () => _showPhotoOptions(context),
-              backgroundColor: TryMaarTheme.surfaceLight,
-              child: const Icon(Icons.refresh_rounded, size: 22),
             ),
           ),
       ],
     );
   }
 
-  Widget _buildBottomBar(
-    BuildContext context,
-    Accessory? selected,
-    List<Accessory> accessories,
-  ) {
+  Widget _buildBottomBar(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(0, 12, 0, 20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       decoration: BoxDecoration(
         color: TryMaarTheme.surface,
         border: Border(
@@ -536,251 +502,148 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Accessory switcher carousel
-          SizedBox(
-            height: 72,
-            child: Row(
-              children: [
-                // Custom Upload Button
-                Padding(
-                  padding: const EdgeInsets.only(left: 16.0, right: 8.0),
-                  child: GestureDetector(
-                    onTap: _uploadCustomAccessory,
-                    child: Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: TryMaarTheme.surfaceOverlay,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: TryMaarTheme.accent.withValues(alpha: 0.5),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.add_photo_alternate_rounded, 
-                          color: TryMaarTheme.accent, 
-                          size: 28,
-                        ),
-                      ),
-                    ),
-                  ),
+          GestureDetector(
+            onTap: _uploadCustomAccessory,
+            child: Container(
+              width: double.infinity,
+              height: 64,
+              decoration: BoxDecoration(
+                color: TryMaarTheme.surfaceOverlay,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: TryMaarTheme.accent.withValues(alpha: 0.5),
+                  width: 1.5,
                 ),
-                // Divider
-                Container(
-                  width: 1,
-                  height: 40,
-                  color: TryMaarTheme.divider,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-                // Catalog List
-                Expanded(
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: accessories.length,
-                    itemBuilder: (context, index) {
-                final item = accessories[index];
-                final isSelected = item.id == selected?.id;
-                return GestureDetector(
-                  onTap: () {
-                    ref.read(selectedAccessoryProvider.notifier).state = item;
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 64,
-                    height: 64,
-                    margin: const EdgeInsets.only(right: 10),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? TryMaarTheme.primary.withValues(alpha: 0.2)
-                          : TryMaarTheme.surfaceOverlay,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isSelected
-                            ? TryMaarTheme.primary
-                            : Colors.white.withValues(alpha: 0.08),
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        item.category == AccessoryCategory.glasses 
-                            ? (item.id.startsWith('custom') ? '✨' : item.category.emoji)
-                            : item.category.emoji,
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ), // end Expanded
-        ],
-      ),
-    ), // end SizedBox
-    const SizedBox(height: 12),
-    // Action buttons
-          if (_selectedImage != null || _isDemoMode)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Compare view coming soon!'),
-                            backgroundColor: TryMaarTheme.surfaceLight,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.compare_rounded, size: 18),
-                      label: const Text('Compare'),
-                    ),
+                  const Icon(
+                    Icons.add_photo_alternate_rounded, 
+                    color: TryMaarTheme.accent, 
+                    size: 28,
                   ),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('✅ Saved to gallery!'),
-                            backgroundColor: TryMaarTheme.surfaceLight,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.save_alt_rounded, size: 18),
-                      label: const Text('Save'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: TryMaarTheme.primary,
-                      ),
+                  Text(
+                    'Upload Item to Try On (${_activeItems.length}/3)',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: TryMaarTheme.accent,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
+          ),
         ],
       ),
     );
   }
+}
 
-  void _showPhotoOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: TryMaarTheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: TryMaarTheme.divider,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Change Photo',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 20),
-                ListTile(
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: TryMaarTheme.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.camera_alt_rounded,
-                      color: TryMaarTheme.primary,
-                    ),
-                  ),
-                  title: const Text('Take a selfie'),
-                  subtitle: Text(
-                    'Use your camera',
-                    style: TextStyle(color: TryMaarTheme.textSecondary),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _pickImage(ImageSource.camera);
-                  },
-                ),
-                const SizedBox(height: 8),
-                ListTile(
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: TryMaarTheme.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.photo_library_rounded,
-                      color: TryMaarTheme.accent,
-                    ),
-                  ),
-                  title: const Text('Choose from gallery'),
-                  subtitle: Text(
-                    'Upload an existing photo',
-                    style: TextStyle(color: TryMaarTheme.textSecondary),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _pickImage(ImageSource.gallery);
-                  },
-                ),
-                const SizedBox(height: 8),
-                ListTile(
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: TryMaarTheme.success.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.face_retouching_natural_rounded,
-                      color: TryMaarTheme.success,
-                    ),
-                  ),
-                  title: const Text('Use Demo Model'),
-                  subtitle: Text(
-                    'Try accessories on an AI model',
-                    style: TextStyle(color: TryMaarTheme.textSecondary),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _useDemoFace();
-                  },
-                ),
-              ],
+class DraggableAccessoryWidget extends StatefulWidget {
+  final DraggableItem item;
+  final VoidCallback onDragStart;
+  final Function(Offset) onDragUpdate;
+  final Function(Offset) onDragEnd;
+
+  const DraggableAccessoryWidget({
+    super.key,
+    required this.item,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  @override
+  State<DraggableAccessoryWidget> createState() => _DraggableAccessoryWidgetState();
+}
+
+class _DraggableAccessoryWidgetState extends State<DraggableAccessoryWidget> {
+  late Offset _position;
+  late double _scale;
+  late double _rotation;
+  
+  Offset _startingPosition = Offset.zero;
+  double _startingScale = 1.0;
+  double _startingRotation = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = widget.item.position;
+    _scale = widget.item.scale;
+    _rotation = widget.item.rotation;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: _position.dx,
+      top: _position.dy,
+      child: GestureDetector(
+        onScaleStart: (details) {
+          widget.onDragStart();
+          _startingPosition = _position;
+          _startingScale = _scale;
+          _startingRotation = _rotation;
+        },
+        onScaleUpdate: (details) {
+          setState(() {
+            // Drag
+            _position = _startingPosition + details.focalPointDelta;
+            _startingPosition = _position; // Continuous update
+            
+            // Scale
+            _scale = (_startingScale * details.scale).clamp(0.2, 5.0);
+            
+            // Rotation
+            _rotation = _startingRotation + details.rotation;
+          });
+          widget.onDragUpdate(details.focalPoint);
+        },
+        onScaleEnd: (details) {
+          // Update the underlying model just in case
+          widget.item.position = _position;
+          widget.item.scale = _scale;
+          widget.item.rotation = _rotation;
+          
+          widget.onDragEnd(details.pointerCount > 0 ? Offset.zero : Offset.zero); // Not strictly accurate global end pos, handled by update state
+        },
+        child: Transform(
+          transform: Matrix4.identity()
+            ..scale(_scale, _scale, 1.0)
+            ..rotateZ(_rotation),
+          alignment: Alignment.center,
+          child: CustomPaint(
+            size: Size(
+              widget.item.image.width.toDouble() / 2, // Default size scaling
+              widget.item.image.height.toDouble() / 2,
             ),
+            painter: _SimpleImagePainter(widget.item.image),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
+}
+
+class _SimpleImagePainter extends CustomPainter {
+  final ui.Image image;
+  _SimpleImagePainter(this.image);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    paintImage(
+      canvas: canvas,
+      rect: Rect.fromLTWH(0, 0, size.width, size.height),
+      image: image,
+      fit: BoxFit.contain,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SimpleImagePainter oldDelegate) => false;
 }
 
 class _ActionButton extends StatelessWidget {
