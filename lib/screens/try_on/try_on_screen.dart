@@ -9,10 +9,8 @@ import '../../core/theme.dart';
 import '../../models/accessory.dart';
 import '../../models/landmark.dart';
 import '../../models/draggable_item.dart';
-import '../../providers/accessory_provider.dart';
 import '../../services/face_mesh_service.dart';
 import '../../services/image_processor_service.dart';
-import '../../services/transform_service.dart';
 import '../../core/utils/image_loader.dart';
 import '../../core/constants.dart';
 import 'item_isolator_screen.dart';
@@ -563,6 +561,7 @@ class _DraggableAccessoryWidgetState extends State<DraggableAccessoryWidget> {
   late Offset _position;
   late double _scale;
   late double _rotation;
+  bool _isActive = false; // Whether this item is currently selected/touched
   
   Offset _startingPosition = Offset.zero;
   double _startingScale = 1.0;
@@ -578,11 +577,17 @@ class _DraggableAccessoryWidgetState extends State<DraggableAccessoryWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final drawW = widget.item.image.width.toDouble() / 2;
+    final drawH = widget.item.image.height.toDouble() / 2;
+    // Add padding for the shadow and selection handles
+    const padding = 8.0;
+
     return Positioned(
-      left: _position.dx,
-      top: _position.dy,
+      left: _position.dx - padding,
+      top: _position.dy - padding,
       child: GestureDetector(
         onScaleStart: (details) {
+          setState(() => _isActive = true);
           widget.onDragStart();
           _startingPosition = _position;
           _startingScale = _scale;
@@ -590,37 +595,40 @@ class _DraggableAccessoryWidgetState extends State<DraggableAccessoryWidget> {
         },
         onScaleUpdate: (details) {
           setState(() {
-            // Drag
             _position = _startingPosition + details.focalPointDelta;
-            _startingPosition = _position; // Continuous update
-            
-            // Scale
+            _startingPosition = _position;
             _scale = (_startingScale * details.scale).clamp(0.2, 5.0);
-            
-            // Rotation
             _rotation = _startingRotation + details.rotation;
           });
           widget.onDragUpdate(details.focalPoint);
         },
         onScaleEnd: (details) {
-          // Update the underlying model just in case
           widget.item.position = _position;
           widget.item.scale = _scale;
           widget.item.rotation = _rotation;
-          
-          widget.onDragEnd(details.pointerCount > 0 ? Offset.zero : Offset.zero); // Not strictly accurate global end pos, handled by update state
+          setState(() => _isActive = false);
+          widget.onDragEnd(Offset.zero);
         },
         child: Transform(
           transform: Matrix4.identity()
             ..scale(_scale, _scale, 1.0)
             ..rotateZ(_rotation),
           alignment: Alignment.center,
-          child: CustomPaint(
-            size: Size(
-              widget.item.image.width.toDouble() / 2, // Default size scaling
-              widget.item.image.height.toDouble() / 2,
+          child: Container(
+            padding: const EdgeInsets.all(padding),
+            decoration: _isActive
+                ? BoxDecoration(
+                    border: Border.all(
+                      color: TryMaarTheme.primary.withValues(alpha: 0.6),
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  )
+                : null,
+            child: CustomPaint(
+              size: Size(drawW, drawH),
+              painter: _RealisticItemPainter(widget.item.image),
             ),
-            painter: _SimpleImagePainter(widget.item.image),
           ),
         ),
       ),
@@ -628,22 +636,37 @@ class _DraggableAccessoryWidgetState extends State<DraggableAccessoryWidget> {
   }
 }
 
-class _SimpleImagePainter extends CustomPainter {
+/// Paints the item image with a subtle drop shadow for realism.
+class _RealisticItemPainter extends CustomPainter {
   final ui.Image image;
-  _SimpleImagePainter(this.image);
+  _RealisticItemPainter(this.image);
 
   @override
   void paint(Canvas canvas, Size size) {
-    paintImage(
-      canvas: canvas,
-      rect: Rect.fromLTWH(0, 0, size.width, size.height),
-      image: image,
-      fit: BoxFit.contain,
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+
+    // 1. Draw subtle drop shadow beneath the item
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.15)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawRect(rect.shift(const Offset(2, 3)), shadowPaint);
+
+    // 2. Draw the item image with high-quality filtering
+    final paint = Paint()
+      ..filterQuality = FilterQuality.high
+      ..isAntiAlias = true;
+
+    canvas.drawImageRect(
+      image,
+      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      rect,
+      paint,
     );
   }
 
   @override
-  bool shouldRepaint(covariant _SimpleImagePainter oldDelegate) => false;
+  bool shouldRepaint(covariant _RealisticItemPainter oldDelegate) =>
+      oldDelegate.image != image;
 }
 
 class _ActionButton extends StatelessWidget {
