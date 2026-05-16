@@ -4,20 +4,20 @@ import 'package:google_fonts/google_fonts.dart';
 class TryMaarTheme {
   TryMaarTheme._();
 
-  // ─── Color Palette ───
-  static const Color primary = Color(0xFFE7620C);       // Jhum primary
-  static const Color primaryDark = Color(0xFFD9480F);   // Jhum accent-pink
-  static const Color accent = Color(0xFFF59E0B);        // Jhum accent-cyan
-  static const Color surface = Color(0xFF0A0A0A);       // Jhum bg-deep
-  static const Color surfaceLight = Color(0xFF111111);  // Jhum bg-card
-  static const Color surfaceOverlay = Color(0xFF141414); // Light overlay
-  static const Color background = Color(0xFF0A0A0A);    // Jhum bg-deep
-  static const Color textPrimary = Color(0xFFF8FAFC);   // Jhum text-main
-  static const Color textSecondary = Color(0xFFA1A1AA); // Jhum text-muted
-  static const Color divider = Color(0x14FFFFFF);       // Jhum border-glass (8% white)
-  static const Color success = Color(0xFF10B981);       // Jhum status-completed
-  static const Color warning = Color(0xFFF59E0B);       // Jhum status-pending
-  static const Color error = Color(0xFFFF5252);
+  // ─── Color Palette (jhumSTUDIOS branding) ───
+  static const Color primary = Color(0xFFF54206);        // Ripe pumpkin (matt)
+  static const Color primaryDark = Color(0xFFD93A05);    // Darker pumpkin
+  static const Color accent = Color(0xFFF54206);         // Same pumpkin for accent unity
+  static const Color surface = Color(0xFF1D252A);        // Dark charcoal (matt)
+  static const Color surfaceLight = Color(0xFF243038);   // Slightly lighter charcoal
+  static const Color surfaceOverlay = Color(0xFF2A3540); // Charcoal overlay
+  static const Color background = Color(0xFF1D252A);     // Dark charcoal base
+  static const Color textPrimary = Color(0xFFF8FAFC);    // Crisp white text
+  static const Color textSecondary = Color(0xFF8A9BAA);  // Muted steel
+  static const Color divider = Color(0x14FFFFFF);        // 8% white
+  static const Color success = Color(0xFF10B981);        // Green
+  static const Color warning = Color(0xFFF59E0B);        // Amber
+  static const Color error = Color(0xFFFF5252);          // Red
 
   // ─── Gradients ───
   static const LinearGradient primaryGradient = LinearGradient(
@@ -28,8 +28,8 @@ class TryMaarTheme {
 
   static const LinearGradient cardGradient = LinearGradient(
     colors: [
-      Color(0xFF1A1A1A),
-      Color(0xFF000000),
+      Color(0xFF243038),
+      Color(0xFF1D252A),
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
