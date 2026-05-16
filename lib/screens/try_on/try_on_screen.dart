@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -205,11 +206,12 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
           // Load UI image
           final ui.Image img = await ImageLoader.loadBytesImage(isolatedBytes);
           
-          Offset initialPos = Offset(
-            MediaQuery.of(context).size.width / 2 - (img.width / 4), 
-            MediaQuery.of(context).size.height / 2 - (img.height / 4)
-          );
-          double initialScale = 1.0;
+          // Use relative positioning for better center alignment in the stack
+          // We'll use a placeholder position and then update it in the widget if needed,
+          // or just use a more reasonable default like 100, 100.
+          // Better: use the center of the target image if possible.
+          Offset initialPos = const Offset(100, 100);
+          double initialScale = 0.8;
           
           if (_detectedFace != null && category == AccessoryCategory.glasses) {
              // Basic estimation for auto-snapping to the eyes
@@ -227,7 +229,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
              
              final eyeDistance = (rightEye.x - leftEye.x).abs() * scaleFactor;
              
-             // Assume glasses width should be roughly 2.0x to 2.5x the eye distance
+             // Assume glasses width should be roughly 2.2x to 2.5x the eye distance
              final targetWidth = eyeDistance * 2.2;
              
              // The CustomPaint in DraggableAccessory draws at img.width / 2.
@@ -235,19 +237,21 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
              initialScale = targetWidth / (img.width / 2);
              
              // We need to set the top-left position of the draggable widget.
-             // The widget draws at (img.width/2 * scale) size.
              final drawW = (img.width / 2) * initialScale;
              final drawH = (img.height / 2) * initialScale;
              
-             // Vertically center the display space (BoxFit.contain roughly centers it)
-             final screenH = MediaQuery.of(context).size.height;
-             final displayH = face.imageHeight * scaleFactor;
-             final yOffset = (screenH - displayH) / 2;
-             
              initialPos = Offset(
-               eyeCenterX - (drawW / 2) + 16, // +16 for margin
-               (eyeCenterY + yOffset) - (drawH / 2) - 60 // -60 adjust for appbar/safearea
+               eyeCenterX - (drawW / 2),
+               eyeCenterY - (drawH / 2)
              );
+          } else {
+            // Default: center of the preview area
+            // Preview area is roughly screen width - 32
+            final areaW = MediaQuery.of(context).size.width - 32;
+            initialPos = Offset(
+              (areaW / 2) - (img.width / 4),
+              200 // Default y
+            );
           }
 
           setState(() {
@@ -482,7 +486,10 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(_selectedImage!.path, fit: BoxFit.contain),
+                 // Cross-platform selfie preview
+                 kIsWeb 
+                   ? Image.network(_selectedImage!.path, fit: BoxFit.contain)
+                   : Image.file(File(_selectedImage!.path), fit: BoxFit.contain),
                 
                 // Draggable Items
                 ..._activeItems.map((item) {
@@ -660,35 +667,39 @@ class _DraggableAccessoryWidgetState extends State<DraggableAccessoryWidget> {
     return Positioned(
       left: _position.dx - padding,
       top: _position.dy - padding,
-      child: GestureDetector(
-        onScaleStart: (details) {
-          setState(() => _isActive = true);
-          widget.onDragStart();
-          _startingPosition = _position;
-          _startingScale = _scale;
-          _startingRotation = _rotation;
-        },
-        onScaleUpdate: (details) {
-          setState(() {
-            _position = _startingPosition + details.focalPointDelta;
+      child: Transform(
+        transform: Matrix4.identity()
+          ..scale(_scale, _scale, 1.0)
+          ..rotateZ(_rotation),
+        alignment: Alignment.center,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onScaleStart: (details) {
+            setState(() => _isActive = true);
+            widget.onDragStart();
             _startingPosition = _position;
-            _scale = (_startingScale * details.scale).clamp(0.2, 5.0);
-            _rotation = _startingRotation + details.rotation;
-          });
-          widget.onDragUpdate(details.focalPoint);
-        },
-        onScaleEnd: (details) {
-          widget.item.position = _position;
-          widget.item.scale = _scale;
-          widget.item.rotation = _rotation;
-          setState(() => _isActive = false);
-          widget.onDragEnd(Offset.zero);
-        },
-        child: Transform(
-          transform: Matrix4.identity()
-            ..scale(_scale, _scale, 1.0)
-            ..rotateZ(_rotation),
-          alignment: Alignment.center,
+            _startingScale = _scale;
+            _startingRotation = _rotation;
+          },
+          onScaleUpdate: (details) {
+            setState(() {
+              // Note: Since we are inside the transform, details.focalPointDelta 
+              // might need to be adjusted or we use globalDelta if available.
+              // However, focalPointDelta is in local coordinates of the parent Stack 
+              // which is what we want for _position.
+              _position += details.focalPointDelta;
+              _scale = (_startingScale * details.scale).clamp(0.2, 5.0);
+              _rotation = _startingRotation + details.rotation;
+            });
+            widget.onDragUpdate(details.focalPoint);
+          },
+          onScaleEnd: (details) {
+            widget.item.position = _position;
+            widget.item.scale = _scale;
+            widget.item.rotation = _rotation;
+            setState(() => _isActive = false);
+            widget.onDragEnd(Offset.zero);
+          },
           child: Container(
             padding: const EdgeInsets.all(padding),
             decoration: _isActive
