@@ -99,13 +99,19 @@ class ImageProcessorService {
         }
       }
 
-      // Threshold
+      // Use soft probabilities directly (no hard threshold) for natural edges.
+      // Only apply gentle threshold to suppress noise in very low/high areas.
       for (int i = 0; i < upscaled.length; i++) {
-        upscaled[i] = upscaled[i] > 128 ? 255 : 0;
+        if (upscaled[i] < 20) {
+          upscaled[i] = 0; // Definite background
+        } else if (upscaled[i] > 235) {
+          upscaled[i] = 255; // Definite foreground
+        }
+        // Values 20-235 remain as soft transitions
       }
 
-      // Feather edges: 3px Gaussian blur on the mask
-      final feathered = _gaussianBlurMask(upscaled, origW, origH, 3);
+      // Feather edges: 5px Gaussian blur for smooth, natural transitions
+      final feathered = _gaussianBlurMask(upscaled, origW, origH, 5);
 
       // Composite: original × feathered mask
       final output = img.Image(width: origW, height: origH, numChannels: 4);
