@@ -166,12 +166,21 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
       
       Uint8List? isolatedBytes;
       
-      if (category == AccessoryCategory.glasses) {
-        setState(() => _isProcessing = true);
-        isolatedBytes = await ImageProcessorService.automaticIsolate(bytes);
-      } else {
-        // Navigate to Isolator Screen for manual extraction
-        if (mounted) {
+      // Try automatic AI isolation first for ALL categories
+      setState(() => _isProcessing = true);
+      isolatedBytes = await ImageProcessorService.automaticIsolate(bytes);
+      
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        
+        if (isolatedBytes != null) {
+          // Show result and offer manual refinement
+          final refined = await _showAutoResultDialog(bytes, isolatedBytes);
+          if (refined != null) {
+            isolatedBytes = refined;
+          }
+        } else {
+          // Auto failed completely — go straight to manual editor
           isolatedBytes = await Navigator.push<Uint8List?>(
             context,
             MaterialPageRoute(
@@ -259,6 +268,72 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen>
         setState(() => _isProcessing = false);
       }
     }
+  }
+
+  /// Shows the auto-isolation result and lets user accept or refine manually.
+  /// Returns refined bytes if user edits, or null if they accept the auto result.
+  Future<Uint8List?> _showAutoResultDialog(
+    Uint8List originalBytes,
+    Uint8List isolatedBytes,
+  ) async {
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: TryMaarTheme.surface,
+          title: const Text('AI Extraction Result'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFF2A2A2A),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(isolatedBytes, fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Does this look good? You can refine it manually if needed.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: TryMaarTheme.textSecondary, fontSize: 13),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'refine'),
+              child: const Text('✏️ Refine Manually',
+                  style: TextStyle(color: TryMaarTheme.accent)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'accept'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: TryMaarTheme.primary,
+              ),
+              child: const Text('✅ Looks Good'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == 'refine' && mounted) {
+      // Open manual editor with the ORIGINAL image (so user starts fresh)
+      return Navigator.push<Uint8List?>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ItemIsolatorScreen(imageBytes: originalBytes),
+        ),
+      );
+    }
+
+    return null; // Accept auto result as-is
   }
 
   void _onItemDragUpdate(Offset globalPosition) {
